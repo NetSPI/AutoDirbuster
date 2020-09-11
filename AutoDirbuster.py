@@ -124,7 +124,14 @@ def main(input_file, gnmap, wordlist, extensions, threads, recursive, startpoint
                         proc = subprocess.Popen(dirbust_command, stderr=subprocess.DEVNULL)
                         try:
                             # Set timeout value
-                            outs, errs = proc.communicate(timeout=dirbust_timeout)
+                            try:
+                                outs, errs = proc.communicate(timeout=dirbust_timeout)
+                            except KeyboardInterrupt:
+                                # Detect OS and use appropriate signal
+                                if os.name == 'posix':
+                                    proc.send_signal(signal.SIGINT)
+                                elif os.name == 'nt':
+                                    proc.send_signal(signal.CTRL_C_EVENT)
                         except subprocess.TimeoutExpired:
                             print('[!] Timeout value of '+str(int(dirbust_timeout/60))+' minutes reached, killing scan')
                             try:
@@ -202,7 +209,7 @@ def serviceQuery(target, verbose):
                             "The plain HTTP request was sent to HTTPS port",
                             "Client sent an HTTP request to an HTTPS server.",
                             "This combination of host and port requires TLS."
-                         ]
+                        ]
 
     # Test if HTTP and if SSL
     if verbose:
@@ -329,8 +336,8 @@ Optional arguments:
     Dirbuster Options:
     -d        Full path of directory that contains DirBuster.jar; default is
                   %s
-    -l        Full file path of wordlist to use for list based brute force;
-                  default is OWASP's directory-list-2.3-small.txt
+    -l        Wordlist to use for list based brute force; default is OWASP's
+                  directory-list-2.3-small.txt
     -e        File Extension list (e.g.: "asp,aspx"); default is None
     -t        Number of connection threads to use; default is 350
     -r        Recursive mode; default is False
@@ -392,13 +399,17 @@ if __name__ == '__main__':
         print(sys.argv[0], ': error: Make sure to provide full path of the directory that contains DirBuster.jar (eg: C:\DirBuster or /opt/DirBuster)')
         sys.exit()
     ## Wordlist
+    default_wordlist = 'directory-list-2.3-small.txt'
     if not arg_wordlist:
-        arg_wordlist = arg_dirbuster_directory+'/directory-list-2.3-small.txt'
+        arg_wordlist = arg_dirbuster_directory+'/'+default_wordlist
     else:
-        arg_wordlist = arg_dirbuster_directory+'/'+arg_wordlist
+        if args.directory:
+            arg_wordlist = arg_dirbuster_directory+'/'+arg_wordlist
+        else:
+            arg_wordlist = arg_wordlist
     if not os.path.isfile(arg_wordlist):
         print(sys.argv[0], ': error: Wordlist file "'+arg_wordlist+'" does not exist. Make sure to provide full or relative path with filename')
-        print(sys.argv[0], ': error: If wordlist argument was not passed, ensure that the DirBust directory of "'+arg_dirbuster_directory+' contains the default wordlist "'+arg_wordlist+'"')
+        print(sys.argv[0], ': error: If wordlist argument was not passed, ensure that the DirBust directory of "'+arg_dirbuster_directory+' contains the default wordlist "'+default_wordlist+'"')
         sys.exit()
     ## Extensions
     if not arg_extensions:
