@@ -109,5 +109,6 @@ Examples:
 ## Dependencies
 Run `pip3 install <module name>` on the following modules:
 * dnspython
+* requests
 
 Alternatively, you can run `pip3 install -r requirements.txt`
