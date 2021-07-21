@@ -20,7 +20,7 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 
 # Control application flow
-def main(input_file, gnmap, wordlist, extensions, threads, recursive, startpoint, dns, single_target_mode, dirbust_timeout, verbose, dirbuster_directory, force, debug):
+def main(input_file, gnmap, wordlist, extensions, threads, recursive, startpoint, dns, single_target_mode, dirbust_timeout, verbose, dirbuster_directory, force, debug, keep):
     # Variables
     targets = []
     open_targets = []
@@ -167,9 +167,13 @@ def main(input_file, gnmap, wordlist, extensions, threads, recursive, startpoint
                         except KeyboardInterrupt:
                             None
                         scan_success = True
-                    target_files.append(output)
+                    # Parse results file into CSV
+                    parseResults(output, keep)
+                    try:
+                        target_files.append(output)
+                    except IOError:
+                        None
                     print('\n')
-
                 # Error handling
                 else:
                     print('Report file already exists, skipping target\n\n')
@@ -302,6 +306,72 @@ def isPortOpen(target):
        return False
 
 
+# Parse text results file into a CSV
+def parseResults(results_file, keep_file):
+    # Variables
+    start = False
+    stop = False
+    target = ''
+    response_code = ''
+    csv_headers = 'Response,Found'
+    results = []
+
+    # Configure CSV output file name
+    parsed_output = results_file.replace('.txt','.csv')
+    if not parsed_output.endswith('.csv'):
+        parsed_output = results_file + '.csv'
+
+    # Parse results
+    print('Parsing',results_file)
+    with open(results_file,'r') as data:
+        for line in data:
+            line = line.rstrip()
+            if 'Errors encountered during testing:' in line:
+                stop = True
+            if line.startswith('http'):
+                if '://' in line:
+                    if 'http://www.owasp.org/index.php/Category:OWASP_DirBuster_Project' != line:
+                        target = line.strip()
+                        start = True
+            if start:
+                if not stop:
+                    if line != '--------------------------------':
+                        if 'found with a ' in line:
+                            if (' response:') or (' responce:') in line:
+                                response_code = line.split('found with a ')[1]
+                                if ' response:' in response_code:
+                                    response_code = response_code.split(' response:')[0]
+                                elif ' responce:' in response_code:
+                                    response_code = response_code.split(' responce:')[0]
+                        else:
+                            if response_code:
+                                if len(line) > 0:
+                                    if 'Files found during testing:' not in line:
+                                        if 'Note that dirbust was automatically ended after user specified timeout' not in line:
+                                            results.append([response_code,str(line.rstrip())])
+
+    # Sort results
+    results.sort(reverse=False, key=lambda found: found[1])
+    results.sort(reverse=False, key=lambda response: response[0])
+
+    # Write results to disk
+    with open(parsed_output,'w') as output_file:
+        output_file.write(csv_headers)
+        output_file.write('\n')
+        for result in results:
+            output_file.write(','.join(result))
+            output_file.write('\n')
+
+    # Print number of results
+    print('Wrote',len(results),'results to', parsed_output)
+
+    # Delete text file, if applicable
+    if not keep_file:
+        os.remove(results_file)
+        print('Removed TXT results file', results_file)
+
+
+# Print custom usage output
 def getUsage():
     path = ''
     if os.name == 'posix':
@@ -330,8 +400,10 @@ Optional arguments:
     -v        Verbose mode; print service query status updates
     -f        Force mode; don't check if DirBuster report file exists, this will
                   result in previous reports being overwritten
+    -k        Don't delete the text results file after converting it to a CSV
+                  result file
     -h        Print this help message
-    --dns     Automatically resolve IP address to hostname to use during dirbust
+    --dns     Automatically resolve IP address to hostname to use during dirbust\
 
     Dirbuster Options:
     -d        Full path of directory that contains DirBuster.jar; default is
@@ -360,6 +432,7 @@ if __name__ == '__main__':
     parser.add_argument('-to', '--timeout', help='Set a timeout value for each host; default is None')
     parser.add_argument('-v', '--verbose', help='Verbose mode; print service query status updates', action='store_true')
     parser.add_argument('-f', '--force', help='Force mode; don\'t check if DirBuster report file exists, this will result in previous reports being overwritten', action='store_true')
+    parser.add_argument('-k', '--keep', help='Don\'t delete the text results file after converting it to a CSV result file', action='store_true')
     parser.add_argument('--dns', help='Automatically resolve IP address to hostname to use during dirbust', action='store_true')
     parser.add_argument('-d', '--directory', help='Full path of directory that contains DirBuster.jar; default is ./DirBuster/')
     parser.add_argument('-l', '--wordlist', help='Wordlist to use for list based brute force; default is OWASP\'s directory-list-2.3-small.txt')
@@ -375,6 +448,7 @@ if __name__ == '__main__':
     arg_timeout = args.timeout
     arg_verbose = args.verbose
     arg_force = args.force
+    arg_keep = args.keep
     arg_dns = args.dns
     arg_dirbuster_directory = args.directory
     arg_wordlist = args.wordlist
@@ -449,4 +523,4 @@ if __name__ == '__main__':
             sys.exit()
 
     # Launch script
-    main(arg_target, arg_gnmap, arg_wordlist, arg_extensions, arg_threads, arg_recursive, arg_startpoint, arg_dns, arg_single_target, arg_timeout, arg_verbose, arg_dirbuster_directory, arg_force, arg_debug)
+    main(arg_target, arg_gnmap, arg_wordlist, arg_extensions, arg_threads, arg_recursive, arg_startpoint, arg_dns, arg_single_target, arg_timeout, arg_verbose, arg_dirbuster_directory, arg_force, arg_debug, arg_keep)
