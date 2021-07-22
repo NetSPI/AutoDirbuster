@@ -86,14 +86,16 @@ Optional arguments:
     -v        Verbose mode; print service query status updates
     -f        Force mode; don't check if DirBuster report file exists, this will
                   result in previous reports being overwritten
+    -k        Don't delete the text results file after converting it to a CSV
+                  result file
     -h        Print this help message
     --dns     Automatically resolve IP address to hostname to use during dirbust
 
     Dirbuster Options:
     -d        Full path of directory that contains DirBuster.jar; default is
-                  /path/of/AutoDirbuster/DirBuster/
-    -l        Full file path of wordlist to use for list based brute force;
-                  default is OWASP's directory-list-2.3-small.txt
+                  C:\Users\apoorman\Documents\PythonProjects\AutoDirbuster\git\AutoDirbuster\DirBuster\
+    -l        Wordlist to use for list based brute force; default is OWASP's
+                  directory-list-2.3-small.txt
     -e        File Extension list (e.g.: "asp,aspx"); default is None
     -t        Number of connection threads to use; default is 350
     -r        Recursive mode; default is False

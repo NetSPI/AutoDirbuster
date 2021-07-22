@@ -403,7 +403,7 @@ Optional arguments:
     -k        Don't delete the text results file after converting it to a CSV
                   result file
     -h        Print this help message
-    --dns     Automatically resolve IP address to hostname to use during dirbust\
+    --dns     Automatically resolve IP address to hostname to use during dirbust
 
     Dirbuster Options:
     -d        Full path of directory that contains DirBuster.jar; default is
