@@ -168,11 +168,13 @@ def main(input_file, gnmap, wordlist, extensions, threads, recursive, startpoint
                             None
                         scan_success = True
                     # Parse results file into CSV
-                    parseResults(output, keep)
                     try:
-                        target_files.append(output)
+                        parseResults(output, keep)
                     except IOError:
                         None
+                    except FileNotFoundError:
+                        None
+                    target_files.append(output)
                     print('\n')
                 # Error handling
                 else:
