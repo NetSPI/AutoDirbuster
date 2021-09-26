@@ -85,6 +85,7 @@ def main(input_file, gnmap, wordlist, extensions, threads, recursive, startpoint
                 scan_success = False
                 url_target = str(proto)+"://"+str(target)
                 output = 'DirBuster-Report-'+str(target.replace(':','-')+'.txt')
+                csv_output = output.replace('.txt','.csv')
                 dirbust_command = [ 'java',
                                     '-jar',
                                     str(dirbuster_directory)+'/DirBuster.jar',
@@ -111,8 +112,10 @@ def main(input_file, gnmap, wordlist, extensions, threads, recursive, startpoint
                 if force:
                     if os.path.isfile(output):
                         os.remove(output)
+                    if os.path.isfile(csv_output):
+                        os.remove(csv_output)
                 else:
-                    file_exists = os.path.isfile(output)
+                    file_exists = os.path.isfile(output) + os.path.isfile(csv_output)
 
                 # Launch Dirbuster
                 if debug:
