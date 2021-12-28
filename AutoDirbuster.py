@@ -231,7 +231,7 @@ def serviceQuery(target, verbose):
             # 5 second timeout seems to be a good balance; any longer and target
             # likely won't respond well to dirbusting, any shorter and a valid
             # target might be unintentionally marked as offline
-            req = requests.get(proto+'://'+target, verify=False, timeout=5, headers=user_agent)
+            req = requests.get(proto+'://'+target, verify=False, timeout=5, headers=user_agent, allow_redirects=False)
 
             # If no connection exception is thrown
             connect = True
