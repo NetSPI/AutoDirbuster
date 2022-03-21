@@ -299,16 +299,19 @@ def gnmapToIPport(gnmap_file):
 
 # TCP connect to determine if IP:port is open
 def isPortOpen(target):
-    host = target.split(':')[0]
-    port = int(target.split(':')[1])
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(3)
-    result = sock.connect_ex((host,port))
-    sock.close()
-    if result == 0:
-       return True
-    else:
-       return False
+    try:
+        host = target.split(':')[0]
+        port = int(target.split(':')[1])
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(3)
+        result = sock.connect_ex((host,port))
+        sock.close()
+        if result == 0:
+           return True
+        else:
+           return False
+    except socket.gaierror:
+        return False
 
 
 # Parse text results file into a CSV
