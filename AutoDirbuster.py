@@ -35,7 +35,7 @@ def main(input_file, gnmap, wordlist, extensions, threads, recursive, startpoint
     elif single_target_mode:
         targets.append(input_file)
     else:
-        with open(input_file,'r') as data:
+        with open(input_file, 'r') as data:
             line_count = 0
             for line in data:
                 line_count += 1
@@ -55,12 +55,12 @@ def main(input_file, gnmap, wordlist, extensions, threads, recursive, startpoint
         for target in targets:
             host = target.split(':')[0]
             port = target.split(':')[1]
-            print('[*] Resolving '+str(host)+' '*25,end='\r')
+            print('[*] Resolving '+str(host)+' '*25, end='\r')
             try:
                 socket.inet_aton(host)
                 host = resolveHostname(host)
             except OSError:
-                None
+                pass
             resolved_targets.append(str(host)+':'+str(port))
         targets = resolved_targets
 
@@ -84,8 +84,8 @@ def main(input_file, gnmap, wordlist, extensions, threads, recursive, startpoint
                 # Configure params for dirbuster launch
                 scan_success = False
                 url_target = str(proto)+"://"+str(target)
-                output = 'DirBuster-Report-'+str(target.replace(':','-')+'.txt')
-                csv_output = output.replace('.txt','.csv')
+                output = 'DirBuster-Report-'+str(target.replace(':', '-')+'.txt')
+                csv_output = output.replace('.txt', '.csv')
                 dirbust_command = [ 'java',
                                     '-jar',
                                     str(dirbuster_directory)+'/DirBuster.jar',
@@ -119,7 +119,7 @@ def main(input_file, gnmap, wordlist, extensions, threads, recursive, startpoint
 
                 # Launch Dirbuster
                 if debug:
-                    print('[DEBUG] Subprocess command:',' '.join(dirbust_command),'\n')
+                    print('[DEBUG] Subprocess command:', ' '.join(dirbust_command),'\n')
                 if not file_exists:
                     # Scan timeout
                     if dirbust_timeout:
@@ -144,22 +144,22 @@ def main(input_file, gnmap, wordlist, extensions, threads, recursive, startpoint
                                 elif os.name == 'nt':
                                     proc.send_signal(signal.CTRL_C_EVENT)
                             except KeyboardInterrupt:
-                                None
+                                pass
                             try:
                                 outs, errs = proc.communicate()
                             except KeyboardInterrupt:
-                                None
+                                pass
                             # Set script vars based on timeout
                             scan_success = False
                             timedout_targets.append(target)
                             # Append timed out target to file
-                            with open('timedout_targets.txt','a') as timed_file:
+                            with open('timedout_targets.txt', 'a') as timed_file:
                                 timed_file.write('\n'+str(target))
                             # Specify in results file that dirbust was incomplete
-                            with open(output,'a') as dirbust_output:
+                            with open(output, 'a') as dirbust_output:
                                 dirbust_output.write('\n\n')
                                 dirbust_output.write('--------------------------------\n')
-                                dirbust_output.write('Note that dirbust was automatically ended after user specified timeout of '+str(int(dirbust_timeout/60))+' minutes\n\n')
+                                dirbust_output.write('Note that dirbust was automatically ended after user specified timeout of ' + str(int(dirbust_timeout/60)) + ' minutes\n\n')
                         scan_success = True
                     # No scan timeout
                     else:
@@ -168,26 +168,28 @@ def main(input_file, gnmap, wordlist, extensions, threads, recursive, startpoint
                         try:
                             outs, errs = proc.communicate()
                         except KeyboardInterrupt:
-                            None
+                            pass
                         scan_success = True
                     # Parse results file into CSV
                     try:
                         parseResults(output, keep)
                     except IOError:
-                        None
+                        pass
                     except FileNotFoundError:
-                        None
+                        pass
                     target_files.append(output)
                     print('\n')
                 # Error handling
                 else:
                     print('Report file already exists, skipping target\n\n')
+            # Service is not HTTP based
             else:
                 closed_targets.append(target)
-                print('Target not online or service not HTTP\n\n')
+                print('Service not HTTP, skipping target\n\n')
+        # Port detected as closed
         else:
             closed_targets.append(target)
-            print('Target not online or service not HTTP\n\n')
+            print('Port detected as closed, skipping target\n\n')
 
     # Append newline to timed out targets file
     with open('timedout_targets.txt','a') as timed_file:
@@ -223,15 +225,15 @@ def serviceQuery(target, verbose):
     # Test if HTTP and if SSL
     if verbose:
         print('Querying service')
-    for proto in ['http','https']:
+    for proto in ['http', 'https']:
         try:
             if verbose:
-                print('    Trying:',proto)
+                print('    Trying:', proto)
 
             # 5 second timeout seems to be a good balance; any longer and target
             # likely won't respond well to dirbusting, any shorter and a valid
             # target might be unintentionally marked as offline
-            req = requests.get(proto+'://'+target, verify=False, timeout=5, headers=user_agent, allow_redirects=False)
+            req = requests.get(proto + '://' + target, verify=False, timeout=5, headers=user_agent, allow_redirects=False)
 
             # If no connection exception is thrown
             connect = True
@@ -253,7 +255,7 @@ def serviceQuery(target, verbose):
         except requests.exceptions.RequestException as e:
             if verbose:
                 print('      [!] Fail, caught exception:',e)
-            None
+            pass
 
     # Return status
     if verbose:
@@ -304,12 +306,12 @@ def isPortOpen(target):
         port = int(target.split(':')[1])
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(3)
-        result = sock.connect_ex((host,port))
+        result = sock.connect_ex((host, port))
         sock.close()
         if result == 0:
-           return True
+            return True
         else:
-           return False
+            return False
     except socket.gaierror:
         return False
 
@@ -330,8 +332,8 @@ def parseResults(results_file, keep_file):
         parsed_output = results_file + '.csv'
 
     # Parse results
-    print('Parsing',results_file)
-    with open(results_file,'r') as data:
+    print('Parsing' ,results_file)
+    with open(results_file, 'r') as data:
         for line in data:
             line = line.rstrip()
             if 'Errors encountered during testing:' in line:
@@ -363,7 +365,7 @@ def parseResults(results_file, keep_file):
     results.sort(reverse=False, key=lambda response: response[0])
 
     # Write results to disk
-    with open(parsed_output,'w') as output_file:
+    with open(parsed_output, 'w') as output_file:
         output_file.write(csv_headers)
         output_file.write('\n')
         for result in results:
@@ -371,7 +373,7 @@ def parseResults(results_file, keep_file):
             output_file.write('\n')
 
     # Print number of results
-    print('Wrote',len(results),'results to', parsed_output)
+    print('Wrote', len(results), 'results to', parsed_output)
 
     # Delete text file, if applicable
     if not keep_file:
@@ -383,9 +385,9 @@ def parseResults(results_file, keep_file):
 def getUsage():
     path = ''
     if os.name == 'posix':
-        path = str(os.getcwd()).replace('\\','/')+'/DirBuster/'
+        path = str(os.getcwd()).replace('\\', '/')+'/DirBuster/'
     elif os.name == 'nt':
-        path = str(os.getcwd()).replace('/','\\')+'\\DirBuster\\'
+        path = str(os.getcwd()).replace('/', '\\')+'\\DirBuster\\'
     return'''
      ___         __        ____  _      __               __
     /   | __  __/ /_____  / __ \(_)____/ /_  __  _______/ /____  _____
