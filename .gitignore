@@ -1,3 +1,5 @@
 *__pycache__*
 .idea/
 *dev/
+*.csv
+timedout_targets.txt

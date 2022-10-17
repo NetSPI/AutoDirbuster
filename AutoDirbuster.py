@@ -118,13 +118,16 @@ def main(input_file, gnmap, wordlist, extensions, threads, recursive, startpoint
                     file_exists = os.path.isfile(output) + os.path.isfile(csv_output)
 
                 # Launch Dirbuster
-                if debug:
-                    print('[DEBUG] Subprocess command:', ' '.join(dirbust_command),'\n')
+                if verbose:
+                    print('[VERBOSE] Subprocess command:', ' '.join(dirbust_command),'\n')
                 if not file_exists:
                     # Scan timeout
                     if dirbust_timeout:
                         # Start process
-                        proc = subprocess.Popen(dirbust_command, stderr=subprocess.DEVNULL)
+                        if debug:
+                            proc = subprocess.Popen(dirbust_command)
+                        else:
+                            proc = subprocess.Popen(dirbust_command, stderr=subprocess.DEVNULL)
                         try:
                             # Set timeout value
                             try:
@@ -164,7 +167,10 @@ def main(input_file, gnmap, wordlist, extensions, threads, recursive, startpoint
                     # No scan timeout
                     else:
                         # Start process
-                        proc = subprocess.Popen(dirbust_command, stderr=subprocess.DEVNULL)
+                        if debug:
+                            proc = subprocess.Popen(dirbust_command)
+                        else:
+                            proc = subprocess.Popen(dirbust_command, stderr=subprocess.DEVNULL)
                         try:
                             outs, errs = proc.communicate()
                         except KeyboardInterrupt:
@@ -407,13 +413,14 @@ Optional arguments:
                   as a positional argument
     -st       Single target mode, positional argument is target in IP:port format
     -to       Set a timeout value in minutes for each host; default is None
-    -v        Verbose mode; print service query status updates
+    -v        Print service query status updates and DirBuster subprocess command
     -f        Force mode; don't check if DirBuster report file exists, this will
                   result in previous reports being overwritten
     -k        Don't delete the text results file after converting it to a CSV
                   result file
     -h        Print this help message
     --dns     Automatically resolve IP address to hostname to use during dirbust
+    --debug   Print DirBuster errors as they occur
 
     Dirbuster Options:
     -d        Full path of directory that contains DirBuster.jar; default is
@@ -440,7 +447,7 @@ if __name__ == '__main__':
     parser.add_argument('-g', '--gnmap', help='Gnmap mode; provide a Nmap .gnmap file instead of an IP:port file as a positional argument', action='store_true')
     parser.add_argument('-st', '--single-target', help='Single target mode, positional argment is target in IP:port format', action='store_true')
     parser.add_argument('-to', '--timeout', help='Set a timeout value for each host; default is None')
-    parser.add_argument('-v', '--verbose', help='Verbose mode; print service query status updates', action='store_true')
+    parser.add_argument('-v', '--verbose', help='Print service query status updates and DirBuster subprocess command', action='store_true')
     parser.add_argument('-f', '--force', help='Force mode; don\'t check if DirBuster report file exists, this will result in previous reports being overwritten', action='store_true')
     parser.add_argument('-k', '--keep', help='Don\'t delete the text results file after converting it to a CSV result file', action='store_true')
     parser.add_argument('--dns', help='Automatically resolve IP address to hostname to use during dirbust', action='store_true')
@@ -450,7 +457,7 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--threads', help='Number of connection threads to use; default is 350')
     parser.add_argument('-r', '--recursive', help='Recursive mode; default is False', action='store_true')
     parser.add_argument('-s', '--start-point', help='Start point of the scan; default is "/"')
-    parser.add_argument('--debug', help='Print the Subprocess command used to launch Dirbuster', action='store_true')
+    parser.add_argument('--debug', help='Print DirBuster errors as they occur', action='store_true')
     args = parser.parse_args()
     arg_target = args.target
     arg_gnmap = args.gnmap
