@@ -1,400 +1,293 @@
 #!/usr/bin/env python3
 
-# AutoDirbuster - Automatically run and save Dirbuster scans for multiple IPs
+# AutoDirbuster - Automatically run and save ffuf scans for multiple IPs
 
 # Imports
 import argparse
 import sys
 import socket
-import requests
 import subprocess
-import signal
 import os
+import json
+import shutil
+import traceback
+import requests
 import dns.resolver
 import dns.reversename
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
-
 
 # Configure requests to suppress SSL validation warning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 
-# Control application flow
-def main(input_file, gnmap, wordlist, extensions, threads, recursive, startpoint, dns, single_target_mode, dirbust_timeout, verbose, dirbuster_directory, force, debug, keep):
-    # Variables
-    targets = []
-    open_targets = []
-    closed_targets = []
-    timedout_targets = []
-    target_files = []
-    target_status_count = 0
+class AutoDirbuster:
+    """Automatically run and save ffuf scans for multiple IPs"""
 
-    # Get list of IP:port
-    if gnmap:
-        targets = gnmapToIPport(input_file)
-    elif single_target_mode:
-        targets.append(input_file)
-    else:
-        with open(input_file, 'r') as data:
-            line_count = 0
-            for line in data:
-                line_count += 1
-                line = line.rstrip().lstrip()
-                if ':' in line:
-                    try:
-                        int(line.split(':')[1])
-                        targets.append(line)
-                    except ValueError:
-                        print(sys.argv[0], ': error: Incorrectly formatted line on '+str(input_file)+':'+str(line_count))
-                else:
-                    print(sys.argv[0], ': error: Incorrectly formatted line on '+str(input_file)+':'+str(line_count))
+    def __init__(self, args: dict):
+        """Initialize attributes for AutoDirbuster instance"""
+        self.__version__ = '2.0.0'
+        self.args = args
+        self.targets = []
 
-    # Resolve IP to hostname if applicable
-    if dns:
-        resolved_targets = []
-        for target in targets:
-            host = target.split(':')[0]
-            port = target.split(':')[1]
-            print('[*] Resolving '+str(host)+' '*25, end='\r')
-            try:
-                socket.inet_aton(host)
-                host = resolveHostname(host)
-            except OSError:
-                pass
-            resolved_targets.append(str(host)+':'+str(port))
-        targets = resolved_targets
+    def main(self):
+        """Coordinate runtime activities"""
+        self.get_targets()
+        self.resolve_hostnames()
+        self.run_engine()
 
-    # Determine if port is open and if service is HTTP or HTTPS, then run Dirbuster
-    for target in targets:
-        # Local variables
-        target_status_count += 1
-        target_output = ''
-        file_exists = False
-
-        # Test if port is open
-        print('['+str(target_status_count)+'/'+str(len(targets))+'] '+str(target)+' '*25)
-        status = isPortOpen(target)
-        if status:
-
-            # Test if service is HTTP/HTTPS
-            proto = serviceQuery(target, verbose)
-            if proto:
-                open_targets.append(target)
-
-                # Configure params for dirbuster launch
-                scan_success = False
-                url_target = str(proto)+"://"+str(target)
-                output = 'DirBuster-Report-'+str(target.replace(':', '-')+'.txt')
-                csv_output = output.replace('.txt', '.csv')
-                dirbust_command = [ 'java',
-                                    '-jar',
-                                    str(dirbuster_directory)+'/DirBuster.jar',
-                                    '-H',
-                                    '-t',
-                                    str(threads),
-                                    '-l',
-                                    wordlist,
-                                    '-u',
-                                    str(url_target)+'/',
-                                    '-e',
-                                    str(extensions),
-                                    '-r',
-                                    str(output)
-                                  ]
-                if not recursive:
-                    dirbust_command.append('-R')
-                if startpoint != '/':
-                    dirbust_command.append('-s')
-                    dirbust_command.append('"'+str(startpoint)+'"')
-
-                # Check if file exists
-                # Dirbuster will do this check anyway and not checking here causes script to crash
-                if force:
-                    if os.path.isfile(output):
-                        os.remove(output)
-                    if os.path.isfile(csv_output):
-                        os.remove(csv_output)
-                else:
-                    file_exists = os.path.isfile(output) + os.path.isfile(csv_output)
-
-                # Launch Dirbuster
-                if verbose:
-                    print('[VERBOSE] Subprocess command:', ' '.join(dirbust_command),'\n')
-                if not file_exists:
-                    # Scan timeout
-                    if dirbust_timeout:
-                        # Start process
-                        if debug:
-                            proc = subprocess.Popen(dirbust_command)
-                        else:
-                            proc = subprocess.Popen(dirbust_command, stderr=subprocess.DEVNULL)
+    def get_targets(self):
+        """Assign target object to either single URL or IP:port from provided filename"""
+        if self.args['url']:
+            self.targets.append(self.args['target'])
+        else:
+            with open(self.args['target'], 'r', encoding='utf-8') as data:
+                line_count = 0
+                for line in data:
+                    line_count += 1
+                    line = line.rstrip().lstrip()
+                    if ':' in line:
                         try:
-                            # Set timeout value
-                            try:
-                                outs, errs = proc.communicate(timeout=dirbust_timeout)
-                            except KeyboardInterrupt:
-                                # Detect OS and use appropriate signal
-                                if os.name == 'posix':
-                                    proc.send_signal(signal.SIGINT)
-                                elif os.name == 'nt':
-                                    proc.send_signal(signal.CTRL_C_EVENT)
-                        except subprocess.TimeoutExpired:
-                            print('[!] Timeout value of '+str(int(dirbust_timeout/60))+' minutes reached, killing scan')
-                            try:
-                                # Detect OS and use appropriate signal
-                                if os.name == 'posix':
-                                    proc.send_signal(signal.SIGINT)
-                                elif os.name == 'nt':
-                                    proc.send_signal(signal.CTRL_C_EVENT)
-                            except KeyboardInterrupt:
-                                pass
-                            try:
-                                outs, errs = proc.communicate()
-                            except KeyboardInterrupt:
-                                pass
-                            # Set script vars based on timeout
-                            scan_success = False
-                            timedout_targets.append(target)
-                            # Append timed out target to file
-                            with open('timedout_targets.txt', 'a') as timed_file:
-                                timed_file.write('\n'+str(target))
-                            # Specify in results file that dirbust was incomplete
-                            with open(output, 'a') as dirbust_output:
-                                dirbust_output.write('\n\n')
-                                dirbust_output.write('--------------------------------\n')
-                                dirbust_output.write('Note that dirbust was automatically ended after user specified timeout of ' + str(int(dirbust_timeout/60)) + ' minutes\n\n')
-                        scan_success = True
-                    # No scan timeout
+                            int(line.split(':')[1])
+                            self.targets.append(line)
+                        except ValueError:
+                            print(sys.argv[0], f': error: Incorrectly formatted line on '
+                                               f'{self.args["target"]}:{line_count}')
                     else:
-                        # Start process
-                        if debug:
-                            proc = subprocess.Popen(dirbust_command)
+                        print(sys.argv[0], f': error: Incorrectly formatted line on '
+                                           f'{self.args["target"]}:{line_count}')
+
+    def resolve_hostnames(self):
+        """Resolve IP to hostname if applicable"""
+        if self.args['dns']:
+            resolved_targets = []
+            for target in self.targets:
+                host = target.split(':')[0]
+                port = target.split(':')[1]
+                print('[*] Resolving ' + str(host) + ' ' * 25, end='\r')
+                try:
+                    socket.inet_aton(host)
+                    host = self.ip_to_hostname(host)
+                except OSError:
+                    pass
+                resolved_targets.append(str(host) + ':' + str(port))
+            self.targets = resolved_targets
+
+    def run_engine(self):
+        """Determine if port is open and if service is HTTP or HTTPS, then run ffuf"""
+        target_status_count = 0
+        valid_output_formats = ['json', 'csv', 'ejson', 'html', 'md', 'ecsv', 'all']
+        print()
+        for target in self.targets:
+            # Local variables
+            target_status_count += 1
+            file_exists = False
+
+            # Test if port is open
+            print(f'[{target_status_count}/{len(self.targets)}] {target}' + ' ' * 25)
+            if self.is_port_open(target):
+
+                # Test if service is HTTP/HTTPS
+                proto = self.service_query(target)
+                if proto:
+
+                    # Configure params for ffuf launch
+                    url_target = str(proto) + "://" + str(target) + self.args['startpoint'] + 'FUZZ'
+                    output_name = f'ffuf-report-{proto}_{target.replace(":", "_")}'
+                    if self.args['output_format'] != 'all':
+                        output_name = output_name + '.' + self.args['output_format']
+                    ffuf_command = ['ffuf',
+                                    '-w',
+                                    str(self.args['wordlist']),
+                                    '-u',
+                                    str(url_target),
+                                    '-X',
+                                    str(self.args['method']),
+                                    '-o',
+                                    str(output_name),
+                                    '-of',
+                                    str(self.args['output_format']),
+                                    '-mc',
+                                    str(','.join(self.args['match_codes']))
+                                    ]
+                    if self.args['extensions']:
+                        ffuf_command.append('-e')
+                        ffuf_command.append(str(self.args['extensions']))
+                    if self.args['threads']:
+                        ffuf_command.append('-t')
+                        ffuf_command.append(str(self.args['threads']))
+                    if self.args['rate']:
+                        ffuf_command.append('-rate')
+                        ffuf_command.append(str(self.args['rate']))
+                    if self.args['recursive']:
+                        ffuf_command.append('-recursion')
+                    if self.args['follow_redirects']:
+                        ffuf_command.append('-r')
+                    if self.args['timeout']:
+                        ffuf_command.append('-maxtime')
+                        ffuf_command.append(str(self.args['timeout']))
+                    # Custom args
+                    if self.args['custom_option']:
+                        for custom_option in self.args['custom_option']:
+                            option_key = '-'+str(custom_option[0])
+                            option_value = custom_option[1]
+                            ffuf_command.append(option_key)
+                            if option_value:
+                                ffuf_command.append(str(option_value))
+
+                    # Check if file exists
+                    if self.args['force']:
+                        if self.args['output_format'] == 'all':
+                            for ext in valid_output_formats:
+                                test_file_name = output_name + '.' + ext
+                                if os.path.isfile(test_file_name):
+                                    os.remove(test_file_name)
                         else:
-                            proc = subprocess.Popen(dirbust_command, stderr=subprocess.DEVNULL)
+                            test_file_name = output_name
+                            if os.path.isfile(test_file_name):
+                                os.remove(test_file_name)
+                    else:
+                        if self.args['output_format'] == 'all':
+                            all_file_exists = []
+                            for ext in valid_output_formats:
+                                test_file_name = output_name + '.' + ext
+                                all_file_exists.append(os.path.isfile(test_file_name))
+                            file_exists = all(all_file_exists)
+                        else:
+                            test_file_name = output_name
+                            file_exists = os.path.isfile(test_file_name)
+
+                    # Launch ffuf
+                    if self.args['debug']:
+                        print('[DEBUG] Subprocess command:', ' '.join(ffuf_command), '\n')
+                    if not file_exists:
+                        # Start process
+                        proc = subprocess.Popen(ffuf_command)
                         try:
                             outs, errs = proc.communicate()
                         except KeyboardInterrupt:
                             pass
-                        scan_success = True
-                    # Parse results file into CSV
-                    try:
-                        parseResults(output, keep)
-                    except IOError:
-                        pass
-                    except FileNotFoundError:
-                        pass
-                    target_files.append(output)
-                    print('\n')
-                # Error handling
+                        except Exception:
+                            print('[ERROR] Uncaught exception:')
+                            print(traceback.format_exc())
+                        print()
+
+                    # Report file already exists
+                    else:
+                        print('Report file already exists, skipping target\n\n')
+
+                # Service is not HTTP based
                 else:
-                    print('Report file already exists, skipping target\n\n')
-            # Service is not HTTP based
+                    print('Service not HTTP, skipping target\n\n')
+
+            # Port detected as closed
             else:
-                closed_targets.append(target)
-                print('Service not HTTP, skipping target\n\n')
-        # Port detected as closed
+                print('Port detected as closed, skipping target\n\n')
+
+    def service_query(self, target: str):
+        """Determine if service is HTTP and if TLS is required"""
+        # Local variables
+        connect = False
+        success_proto = ''
+        user_agent = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:61.0) Gecko/20100101 Firefox/61.0'}
+        ssl_error_strings = ["Reason: You're speaking plain HTTP to an SSL-enabled server port.",
+                             "It looks like you are trying to access MongoDB over HTTP on the native driver port.",
+                             "The plain HTTP request was sent to HTTPS port",
+                             "Client sent an HTTP request to an HTTPS server.",
+                             "This combination of host and port requires TLS."
+                             ]
+
+        # Test if HTTP and if SSL
+        if self.args['debug']:
+            print('Querying service')
+        for proto in ['http', 'https']:
+            try:
+                if self.args['debug']:
+                    print('    Trying:', proto)
+
+                # 5 second timeout seems to be a good balance; any longer and target
+                # likely won't respond well to dirbusting, any shorter and a valid
+                # target might be unintentionally marked as offline
+                req = requests.get(proto + '://' + target,
+                                   verify=False,
+                                   timeout=5,
+                                   headers=user_agent,
+                                   allow_redirects=False)
+
+                # If no connection exception is thrown
+                connect = True
+                success_proto = proto
+
+                # If SSL error is given from web server (eg: Nginx)
+                if proto == 'http':
+                    for message in ssl_error_strings:
+                        if message in req.text:
+                            if self.args['debug']:
+                                print('      [!] Fail, SSL exception:', message)
+                            connect = False
+                            success_proto = ''
+
+                # Debug status
+                if connect:
+                    if self.args['debug']:
+                        print('      [+] Success with', proto)
+            except requests.exceptions.RequestException as e:
+                if self.args['debug']:
+                    print('      [!] Fail, caught exception:', e)
+                pass
+            except Exception:
+                print('[ERROR] Uncaught exception:')
+                print(traceback.format_exc())
+
+        # Return status
+        if self.args['debug']:
+            print()
+        if connect:
+            return success_proto
         else:
-            closed_targets.append(target)
-            print('Port detected as closed, skipping target\n\n')
+            return None
 
-    # Append newline to timed out targets file
-    with open('timedout_targets.txt','a') as timed_file:
-        timed_file.write('\n')
-
-
-# Resolve IP to hostname
-def resolveHostname(target):
-    try:
-        qname = dns.reversename.from_address(target)
-        answer = dns.resolver.query(qname, 'PTR')
-        if answer:
-            return str(answer[0])[:-1]
-        else:
-            return target
-    except dns.exception.DNSException:
-        return target
-
-
-# Determine if service is HTTP and if SSL is required
-def serviceQuery(target, verbose):
-    # Local variables
-    connect = False
-    success_proto = ''
-    user_agent = {'User-Agent' : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:61.0) Gecko/20100101 Firefox/61.0'}
-    ssl_error_strings = [  "Reason: You're speaking plain HTTP to an SSL-enabled server port.",
-                            "It looks like you are trying to access MongoDB over HTTP on the native driver port.",
-                            "The plain HTTP request was sent to HTTPS port",
-                            "Client sent an HTTP request to an HTTPS server.",
-                            "This combination of host and port requires TLS."
-                        ]
-
-    # Test if HTTP and if SSL
-    if verbose:
-        print('Querying service')
-    for proto in ['http', 'https']:
+    @staticmethod
+    def ip_to_hostname(target):
+        """Resolve IP to hostname"""
         try:
-            if verbose:
-                print('    Trying:', proto)
+            qname = dns.reversename.from_address(target)
+            answer = dns.resolver.resolve(qname, 'PTR')
+            if answer:
+                return str(answer[0])[:-1]
+            else:
+                return target
+        except dns.exception.DNSException:
+            return target
+        except Exception:
+            print('[ERROR] Uncaught exception:')
+            print(traceback.format_exc())
+            return target
 
-            # 5 second timeout seems to be a good balance; any longer and target
-            # likely won't respond well to dirbusting, any shorter and a valid
-            # target might be unintentionally marked as offline
-            req = requests.get(proto + '://' + target, verify=False, timeout=5, headers=user_agent, allow_redirects=False)
-
-            # If no connection exception is thrown
-            connect = True
-            success_proto = proto
-
-            # If SSL error is given from web server (eg: Nginx)
-            if proto == 'http':
-                for message in ssl_error_strings:
-                    if message in req.text:
-                        if verbose:
-                            print('      [!] Fail, SSL exception:',message)
-                        connect = False
-                        success_proto = ''
-
-            # Verbose status
-            if connect:
-                if verbose:
-                    print('      [+] Success with',proto)
-        except requests.exceptions.RequestException as e:
-            if verbose:
-                print('      [!] Fail, caught exception:',e)
-            pass
-
-    # Return status
-    if verbose:
-        print()
-    if connect:
-        return success_proto
-    else:
-        return None
-
-
-# Gnmap to IP:port
-def gnmapToIPport(gnmap_file):
-
-    # Local variables
-    prelim_results = []
-    results = []
-    ports_total = []
-
-    # Get relevant lines from file
-    with open(gnmap_file,'r') as source_data:
-        for line in source_data:
-            if 'Ports' in line:
-                prelim_results.append(line.rstrip())
-
-    # Data processing
-    for line in prelim_results:
-        ports = []
-        if line[0] != '#':
-            ip = line.split(' ')[1].strip()
-            port_string = line.split('Ports: ')[1].split('\t')[0]
-            for x in range(0, int(port_string.count(', '))+1):
-                temp = port_string.split(', ')[x].strip()
-                if '/open/' in temp:
-                    ports.append(int(temp.split('/')[0]))
-            if ports:
-                for port in ports:
-                    if port not in ports_total:
-                        ports_total.append(int(port))
-                for port in ports:
-                    results.append(ip+':'+str(port))
-    return results
-
-
-# TCP connect to determine if IP:port is open
-def isPortOpen(target):
-    try:
-        host = target.split(':')[0]
-        port = int(target.split(':')[1])
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(3)
-        result = sock.connect_ex((host, port))
-        sock.close()
-        if result == 0:
-            return True
-        else:
+    @staticmethod
+    def is_port_open(target: str):
+        """TCP connect to determine if IP:port is open"""
+        try:
+            host = target.split(':')[0]
+            port = int(target.split(':')[1])
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(3)
+            result = sock.connect_ex((host, port))
+            sock.close()
+            if result == 0:
+                return True
+            else:
+                return False
+        except socket.gaierror:
             return False
-    except socket.gaierror:
-        return False
-
-
-# Parse text results file into a CSV
-def parseResults(results_file, keep_file):
-    # Variables
-    start = False
-    stop = False
-    target = ''
-    response_code = ''
-    csv_headers = 'Response,Found'
-    results = []
-
-    # Configure CSV output file name
-    parsed_output = results_file.replace('.txt','.csv')
-    if not parsed_output.endswith('.csv'):
-        parsed_output = results_file + '.csv'
-
-    # Parse results
-    print('Parsing' ,results_file)
-    with open(results_file, 'r') as data:
-        for line in data:
-            line = line.rstrip()
-            if 'Errors encountered during testing:' in line:
-                stop = True
-            if line.startswith('http'):
-                if '://' in line:
-                    if 'http://www.owasp.org/index.php/Category:OWASP_DirBuster_Project' != line:
-                        target = line.strip()
-                        start = True
-            if start:
-                if not stop:
-                    if line != '--------------------------------':
-                        if 'found with a ' in line:
-                            if (' response:') or (' responce:') in line:
-                                response_code = line.split('found with a ')[1]
-                                if ' response:' in response_code:
-                                    response_code = response_code.split(' response:')[0]
-                                elif ' responce:' in response_code:
-                                    response_code = response_code.split(' responce:')[0]
-                        else:
-                            if response_code:
-                                if len(line) > 0:
-                                    if 'Files found during testing:' not in line:
-                                        if 'Note that dirbust was automatically ended after user specified timeout' not in line:
-                                            results.append([response_code,str(line.rstrip())])
-
-    # Sort results
-    results.sort(reverse=False, key=lambda found: found[1])
-    results.sort(reverse=False, key=lambda response: response[0])
-
-    # Write results to disk
-    with open(parsed_output, 'w') as output_file:
-        output_file.write(csv_headers)
-        output_file.write('\n')
-        for result in results:
-            output_file.write(','.join(result))
-            output_file.write('\n')
-
-    # Print number of results
-    print('Wrote', len(results), 'results to', parsed_output)
-
-    # Delete text file, if applicable
-    if not keep_file:
-        os.remove(results_file)
-        print('Removed TXT results file', results_file)
+        except Exception:
+            print('[ERROR] Uncaught exception:')
+            print(traceback.format_exc())
+            return False
 
 
 # Print custom usage output
-def getUsage():
-    path = ''
-    if os.name == 'posix':
-        path = str(os.getcwd()).replace('\\', '/')+'/DirBuster/'
-    elif os.name == 'nt':
-        path = str(os.getcwd()).replace('/', '\\')+'\\DirBuster\\'
-    return'''
+def get_usage():
+    return r'''
      ___         __        ____  _      __               __
     /   | __  __/ /_____  / __ \(_)____/ /_  __  _______/ /____  _____
    / /| |/ / / / __/ __ \/ / / / / ___/ __ \/ / / / ___/ __/ _ \/ ___/
@@ -402,142 +295,237 @@ def getUsage():
  /_/  |_\__,_/\__/\____/_____/_/_/  /_.___/\__,_/____/\__/\___/_/
 
 %s [options] {target file}
-    Automatically run and save Dirbuster scans for multiple IPs
 
-Positional arguments:
-    {target} Target file; list of IP:port, one per line
+Automatically run and save ffuf scans for multiple IPs
 
-Optional arguments:
-    Common Options:
-    -g        Gnmap mode; provide a Nmap .gnmap file instead of an IP:port file
-                  as a positional argument
-    -st       Single target mode, positional argument is target in IP:port format
-    -to       Set a timeout value in minutes for each host; default is None
-    -v        Print service query status updates and DirBuster subprocess command
-    -f        Force mode; don't check if DirBuster report file exists, this will
-                  result in previous reports being overwritten
-    -k        Don't delete the text results file after converting it to a CSV
-                  result file
-    -h        Print this help message
-    --dns     Automatically resolve IP address to hostname to use during dirbust
-    --debug   Print DirBuster errors as they occur
+options:
+  -h, --help            show this help message and exit
 
-    Dirbuster Options:
-    -d        Full path of directory that contains DirBuster.jar; default is
-                  %s
-    -l        Wordlist to use for list based brute force; default is OWASP's
-                  directory-list-2.3-small.txt
-    -e        File Extension list (e.g.: "asp,aspx"); default is None
-    -t        Number of connection threads to use; default is 350
-    -r        Recursive mode; default is False
-    -s        Start point of the scan; default is "/"
+AutoDirbuster options:
+  target                Target file with IP:port, one per line
+  -u, --url             Single target mode, positional argument is target in IP:port
+                        format
+  -f, --force           Force mode; don't check if report file exists, this will result in
+                        previous reports being overwritten
+  --dns                 Automatically resolve IP address to hostname to use during dirbust
+  --debug               Show debugging information
+
+ffuf options:
+  -w WORDLIST, --wordlist WORDLIST
+                        Wordlist to use for list based brute force
+  -X METHOD, --method METHOD
+                        HTTP method to use; default=GET
+  -e EXTENSIONS, --extensions EXTENSIONS
+                        File extension list (e.g.: "asp,aspx"); default is None
+  -t THREADS, --threads THREADS
+                        Override the default number of ffuf threads
+  --rate RATE           Rate of requests per second
+  -to TIMEOUT, --timeout TIMEOUT
+                        Set a timeout value for each host in minutes; default is None
+  -fr, --follow-redirects
+                        Follow redirects; default is False
+  -r, --recursive       Recursive mode; default is False
+  -s STARTPOINT, --startpoint STARTPOINT
+                        Start point of the scan; default=/
+  -of OUTPUT_FORMAT, --output-format OUTPUT_FORMAT
+                        Output format to write results to; default=csv
+  -mc MATCH_CODES, --match-codes MATCH_CODES
+                        Match HTTP status codes;
+                        default=200,204,301,302,307,401,403,405,500
+  --custom-option CUSTOM_OPTION [CUSTOM_OPTION ...]
+                        Specify ffuf option that AutoDirbuster doesn't support by default.
+                        Argument should be a key/value pair separated by a comma with no
+                        leading '-', example: --custom-option=ml,1. If the provided
+                        argument is a boolean, provide an empty value: --custom-option=sa,
 
 Examples:
-    python AutoDirbuster.py ip_port_list.txt
-    python AutoDirbuster.py -g Nmap_results.gnmap -to 15
-    python AutoDirbuster.py -g Nmap_results.gnmap -r -e "php,html" --dns\n\r
-''' % (sys.argv[0], path)
+    python AutoDirbuster.py ip_port_list.txt -w my_wordlist.txt
+    python AutoDirbuster.py -st example.com:80 -w my_wordlist.txt -mc 200,500
+    python AutoDirbuster.py ip_port_list.txt -w my_wordlist.txt -r -e "php,html" --dns
+    
+''' % sys.argv[0]
 
 
 # Launch program
 if __name__ == '__main__':
+    """Run from CLI"""
+
+    # Defaults
+    default_method = 'GET'
+    default_startpoint = '/'
+    default_output_format = 'csv'
+    default_status_codes = '200,204,301,302,307,401,403,405,500'
+    default_custom_args_enabled = True
+
     # Parse arguments
-    parser = argparse.ArgumentParser(description='Automatically run and save Dirbuster scans for multiple IPs', add_help=False, usage=getUsage())
-    parser.add_argument('target', help='Target file with IP:port or Gnmap file if --gnmap is used')
-    parser.add_argument('-g', '--gnmap', help='Gnmap mode; provide a Nmap .gnmap file instead of an IP:port file as a positional argument', action='store_true')
-    parser.add_argument('-st', '--single-target', help='Single target mode, positional argment is target in IP:port format', action='store_true')
-    parser.add_argument('-to', '--timeout', help='Set a timeout value for each host; default is None')
-    parser.add_argument('-v', '--verbose', help='Print service query status updates and DirBuster subprocess command', action='store_true')
-    parser.add_argument('-f', '--force', help='Force mode; don\'t check if DirBuster report file exists, this will result in previous reports being overwritten', action='store_true')
-    parser.add_argument('-k', '--keep', help='Don\'t delete the text results file after converting it to a CSV result file', action='store_true')
-    parser.add_argument('--dns', help='Automatically resolve IP address to hostname to use during dirbust', action='store_true')
-    parser.add_argument('-d', '--directory', help='Full path of directory that contains DirBuster.jar; default is ./DirBuster/')
-    parser.add_argument('-l', '--wordlist', help='Wordlist to use for list based brute force; default is OWASP\'s directory-list-2.3-small.txt')
-    parser.add_argument('-e', '--extensions', help='File Extention list (e.g.: "asp,aspx"); default is None')
-    parser.add_argument('-t', '--threads', help='Number of connection threads to use; default is 350')
-    parser.add_argument('-r', '--recursive', help='Recursive mode; default is False', action='store_true')
-    parser.add_argument('-s', '--start-point', help='Start point of the scan; default is "/"')
-    parser.add_argument('--debug', help='Print DirBuster errors as they occur', action='store_true')
-    args = parser.parse_args()
-    arg_target = args.target
-    arg_gnmap = args.gnmap
-    arg_single_target = args.single_target
-    arg_timeout = args.timeout
-    arg_verbose = args.verbose
-    arg_force = args.force
-    arg_keep = args.keep
-    arg_dns = args.dns
-    arg_dirbuster_directory = args.directory
-    arg_wordlist = args.wordlist
-    arg_extensions = args.extensions
-    arg_threads = args.threads
-    arg_recursive = args.recursive
-    arg_startpoint = args.start_point
-    arg_debug = args.debug
+    parser = argparse.ArgumentParser(description='Automatically run and save ffuf scans for multiple IPs',
+                                     add_help=False,
+                                     usage=get_usage())
+
+    autodirbuster_option = parser.add_argument_group('AutoDirbuster options')
+    autodirbuster_option.add_argument('target',
+                                      help='Target file with IP:port, one per line',
+                                      type=str)
+    autodirbuster_option.add_argument('-u', '--url',
+                                      help='Single target mode, positional argument is target in IP:port format',
+                                      action='store_true')
+    autodirbuster_option.add_argument('-f', '--force',
+                                      help="Force mode; don't check if report file exists, this will result in "
+                                           "previous reports being overwritten",
+                                      action='store_true')
+    autodirbuster_option.add_argument('--dns', help='Automatically resolve IP address to hostname to use during '
+                                                    'dirbust',
+                                      action='store_true')
+    autodirbuster_option.add_argument('--debug',
+                                      help='Show debugging information',
+                                      action='store_true')
+    autodirbuster_option.add_argument('-h', '--help',
+                                      help='Show this help message and exit',
+                                      action='store_true')
+
+    ffuf_options = parser.add_argument_group('ffuf options')
+    ffuf_options.add_argument('-w', '--wordlist',
+                              help='Wordlist to use for list based brute force',
+                              required=True)
+    ffuf_options.add_argument('-X', '--method',
+                              help=f'HTTP method to use; default={default_method}',
+                              type=str,
+                              default=default_method)
+    ffuf_options.add_argument('-e', '--extensions',
+                              help='File extension list (e.g.: "asp,aspx"); default is None',
+                              type=str)
+    ffuf_options.add_argument('-t', '--threads',
+                              help='Override the default number of ffuf threads',
+                              type=int)
+    ffuf_options.add_argument('--rate',
+                              help='Rate of requests per second',
+                              type=int)
+    ffuf_options.add_argument('-to', '--timeout',
+                              help='Set a timeout value for each host in minutes; default is None',
+                              type=int)
+    ffuf_options.add_argument('-fr', '--follow-redirects',
+                              help='Follow redirects; default is False',
+                              action='store_true')
+    ffuf_options.add_argument('-r', '--recursive',
+                              help='Recursive mode; default is False',
+                              action='store_true')
+    ffuf_options.add_argument('-s', '--startpoint',
+                              help=f'Start point of the scan; default={default_startpoint}',
+                              type=str,
+                              default=default_startpoint)
+    ffuf_options.add_argument('-of', '--output-format',
+                              help=f'Output format to write results to; default={default_output_format}',
+                              type=str,
+                              default=default_output_format)
+    ffuf_options.add_argument('-mc', '--match-codes',
+                              help=f'Match HTTP status codes; default={default_status_codes}',
+                              type=str,
+                              default=default_status_codes)
+    # Security note: this argument will pass dangerous user input into the terminal via subprocess.Popen(). Please be
+    #                sure not to provide AutoDirbuster with excessive permissions or host this program externally
+    #                without disabling this argument. If you wish to disable this functionality, please modify the
+    #                value of the 'default_custom_args_enabled' parameter to False
+    if default_custom_args_enabled:
+        ffuf_options.add_argument('--custom-option',
+                                  help="Specify ffuf option that AutoDirbuster doesn't support by default. Argument "
+                                       "should be a key/value pair separated by a comma with no leading '-', example: "
+                                       "--custom-option=ml,1. If the provided argument is a boolean, provide an empty "
+                                       "value: --custom-option=sa,",
+                                  type=str,
+                                  nargs='+',
+                                  action='append')
+
+    # Parse arguments
+    raw_args = parser.parse_args()
+    arguments = raw_args.__dict__
+
+    # Print help
+    if arguments['help']:
+        print(get_usage())
+        sys.exit()
 
     # Validate arguments
-    ## Dirbuster directory
-    if arg_dirbuster_directory:
-        if arg_dirbuster_directory[-1] == '/':
-            arg_dirbuster_directory = arg_dirbuster_directory[:-1]
-        if arg_dirbuster_directory[-1] == '\\':
-            arg_dirbuster_directory = arg_dirbuster_directory[:-1]
-    else:
-        arg_dirbuster_directory = str(os.getcwd())+'/DirBuster'
-    ## Check if Java JAR is in dirbuster directory
-    if not os.path.isfile(arg_dirbuster_directory+'/DirBuster.jar'):
-        print(sys.argv[0], ': error: Incorrect DirBuster directory of "'+str(arg_dirbuster_directory)+'" provided, "'+arg_dirbuster_directory+'/DirBuster.jar" does not exist.')
-        print(sys.argv[0], ': error: Make sure to provide full path of the directory that contains DirBuster.jar (eg: C:\DirBuster or /opt/DirBuster)')
-        sys.exit()
-    ## Wordlist
-    default_wordlist = 'directory-list-2.3-small.txt'
-    if not arg_wordlist:
-        arg_wordlist = arg_dirbuster_directory+'/'+default_wordlist
-    else:
-        if args.directory:
-            arg_wordlist = arg_dirbuster_directory+'/'+arg_wordlist
-        else:
-            arg_wordlist = arg_wordlist
-    if not os.path.isfile(arg_wordlist):
-        print(sys.argv[0], ': error: Wordlist file "'+arg_wordlist+'" does not exist. Make sure to provide full or relative path with filename')
-        print(sys.argv[0], ': error: If wordlist argument was not passed, ensure that the DirBust directory of "'+arg_dirbuster_directory+' contains the default wordlist "'+default_wordlist+'"')
-        sys.exit()
-    ## Extensions
-    if not arg_extensions:
-        arg_extensions = '""'
-    ## Threads
-    if arg_threads:
-        try:
-            int(arg_threads)
-        except ValueError:
-            print(sys.argv[0], ': error: Provided value for threads must be an integer')
-            sys.exit()
-    else:
-        arg_threads = 350
-    ## Start point
-    if arg_startpoint:
-        if arg_startpoint[0] != '/':
-            arg_startpoint = '/'+arg_startpoint
-    else:
-        arg_startpoint = '/'
-    ## Timeout
-    if arg_timeout:
-        try:
-            arg_timeout = int(arg_timeout)*60
-        except ValueError:
-            print(sys.argv[0], ': error: Provided value for timeout must be an integer')
-            sys.exit()
-    ## Single target
-    if arg_single_target:
-        if ':' in arg_target:
+    # URL
+    if arguments['url']:
+        if 'FUZZ' in arguments['target']:
+            parser.error('Provided URL cannot contain the string "FUZZ"')
+    # Start point
+    if arguments['startpoint'][0] != '/':
+        arguments['startpoint'] = '/' + arguments['startpoint']
+        if arguments['startpoint'][-1] != '/':
+            arguments['startpoint'] = arguments['startpoint'] + '/'
+    # Single target
+    if arguments['url']:
+        if ':' in arguments['target']:
             try:
-                int(arg_target.split(':')[1])
+                int(arguments['target'].split(':')[1])
             except ValueError:
-                print(sys.argv[0], ': Incorrectly formatted target: "'+str(arg_target)+'". Format: host:port (eg: 127.0.0.1:80 or example.com:80)')
-                sys.exit()
+                parser.error(f': Incorrectly formatted target: "{arguments["target"]}". Format: host:port '
+                             f'(eg: 127.0.0.1:80 or example.com:80)')
         else:
-            print(sys.argv[0], ': Incorrectly formatted target: "'+str(arg_target)+'". Format: host:port (eg: 127.0.0.1:80 or example.com:80)')
-            sys.exit()
+            parser.error(f': Incorrectly formatted target: "{arguments["target"]}". Format: host:port '
+                         f'(eg: 127.0.0.1:80 or example.com:80)')
+    # Output formats
+    if arguments['output_format']:
+        valid_output_formats_args = ['json', 'csv', 'ejson', 'html', 'md', 'ecsv', 'all']
+        if arguments['output_format'] not in valid_output_formats_args:
+            parser.error(
+                f'Provided output format "{arguments["output_format"]}" is not a valid output format. '
+                f'One of the following values can be used: {",".join(valid_output_formats_args)}')
+    # Status codes
+    if arguments['match_codes']:
+        status_codes = []
+        comma_count = arguments['match_codes'].count(',')
+        for x in range(0, comma_count + 1):
+            code = arguments['match_codes'].split(',')[x].lower()
+            try:
+                code = int(code)
+                if code < 100 or code > 999:
+                    parser.error('Status codes need to be an integer between 100-999')
+                else:
+                    status_codes.append(str(code))
+            except ValueError:
+                parser.error('Status codes need to be an integer between 100-999')
+        arguments['match_codes'] = status_codes
+    # Timeout
+    if arguments['timeout']:
+        arguments['timeout'] = arguments['timeout'] * 60
+    # Custom options
+    if default_custom_args_enabled:
+        if arguments['custom_option']:
+            custom_options_args = []
+            for option_list in arguments['custom_option']:
+                if ',' not in option_list[0]:
+                    parser.error('Custom option requires a key/value pair separated by a comma, example: '
+                                 '--custom-option=ml,1')
+                else:
+                    key = option_list[0].split(',')[0]
+                    # Replace instead of split to preserve commas in value
+                    value = str(option_list[0].replace(key+',', ''))
+                    if len(value) == 0:
+                        value = None
+                    if key[0] == '-':
+                        key = key[1:]
+                    custom_options_args.append((key, value))
+            arguments['custom_option'] = custom_options_args
+    else:
+        arguments['custom_option'] = None
 
-    # Launch script
-    main(arg_target, arg_gnmap, arg_wordlist, arg_extensions, arg_threads, arg_recursive, arg_startpoint, arg_dns, arg_single_target, arg_timeout, arg_verbose, arg_dirbuster_directory, arg_force, arg_debug, arg_keep)
+    # Debug
+    if arguments['debug']:
+        print('[DEBUG] Arguments:')
+        print(json.dumps(arguments, indent=4, default=str))
+        print()
+
+    # Confirm that ffuf binary is in path
+    ffuf_binary_name = 'ffuf'
+    ffuf_repo = 'https://github.com/ffuf/ffuf'
+    in_path = shutil.which(ffuf_binary_name)
+    if not in_path:
+        parser.error(
+            f'ffuf binary "{ffuf_binary_name}" is not in system path. '
+            f'Please ensure that ffuf is installed and in your system path. Instructions can be found at {ffuf_repo}')
+
+    # Launch AutoDirbuster
+    adb = AutoDirbuster(arguments)
+    adb.main()

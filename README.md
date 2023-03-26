@@ -1,70 +1,92 @@
-# AutoDirbuster
-By Alex Poorman
+```
+                         ___         __        ____  _      __               __
+                        /   | __  __/ /_____  / __ \(_)____/ /_  __  _______/ /____  _____
+                       / /| |/ / / / __/ __ \/ / / / / ___/ __ \/ / / / ___/ __/ _ \/ ___/
+                      / ___ / /_/ / /_/ /_/ / /_/ / / /  / /_/ / /_/ (__  ) /_/  __/ /
+                     /_/  |_\__,_/\__/\____/_____/_/_/  /_.___/\__,_/____/\__/\___/_/
+```
 
-## Purpose
-Automatically run and save Dirbuster scans for multiple IPs
+### Automatically run and save ffuf scans for multiple IPs
+
+## Contents
+  * [Quick Run](#quick-run)
+  * [FAQ](#faq)
+    * [Why?](#why)
+    * [What is the recommended usage?](#what-is-the-recommended-usage)
+    * [What data does this need?](#what-data-does-this-need)
+    * [How does this script work?](#how-does-this-script-work)
+    * [This program isn't working](#this-program-isnt-working)
+  * [Usage](#usage)
 
 ## Quick Run
 ```
 git clone https://github.com/NetSPI/AutoDirbuster.git
 cd AutoDirbuster && pip3 install -r requirements.txt
-python AutoDirbuster.py ip_port_list.txt
+python AutoDirbuster.py ip_port_list.txt -w my_wordlist.txt
 ```
 
 ## FAQ
 ### Why?
-OWASP Dirbuster is a great directory buster but running it against multiple IPs and ports is a very manual process with a lot of downtime between scans. This script attempts to automate that process and eliminates downtime between scans.
+Ffuf is a great directory buster but running it against multiple IPs and ports is a very manual process with a lot of downtime between scans. This script attempts to automate that process and eliminates downtime between scans.
 
 ### What is the recommended usage?
-If attacking multiple targets:
-* Run Nmap and find open ports, outputting the results with `-oG` or `-oA`
-* Run AutoDirbuster with the Nmap results and a timeout (closed ports or non-HTTP based services are ignored)
+**If attacking multiple targets:**
+* Run Nmap and find open ports
+* Review the Nmap results and create an IP:port list, one per line
+* Run AutoDirbuster against the open ports
+* AutoDirbuster will determine if the provided port is open and if the service is HTTP based
 
-  * `python AutoDirbuster.py -g Nmap_results.gnmap -to 15`
+  * `python AutoDirbuster.py ip_port_list.txt -w my_wordlist.txt`
 
-* As the pentest progresses, periodically review the Dirbust results using `dirbust_read.py`, which will ignore all Dirbuster error lines and only print the found directories and files
+**If attacking a single target:**
 
-If attacking a single target:
+* `python AutoDirbuster.py -u example.com:80 -w my_wordlist.txt`
 
-* `python AutoDirbuster.py -st example.com:80`
+**Useful options include:**
+
+| Option          | Purpose                                                           |
+|-----------------|-------------------------------------------------------------------|
+| --dns           | Resolve IPs to hostnames                                          |
+| --extensions    | File extensions to use when scanning                              |
+| --rate          | Rate of requests per second                                       |
+| --timeout       | Set a timeout value for each host in minutes                      |
+| --match-codes   | Match provided HTTP status codes                                  |
+| --custom-option | Specify ffuf option that AutoDirbuster doesn't support by default |
+
+Specify the `--help` flag for a full list of options.
 
 ### What data does this need?
-The script can take three data sources:
+The program can take two data sources:
 1. List of IP:port or hostname:port, one per line
 
-* `python AutoDirbuster.py ip_port_list.txt`
+* `python AutoDirbuster.py ip_port_list.txt -w my_wordlist.txt`
 
-2. An Nmap Gnmap result file
+2. Single target
 
-* `python AutoDirbuster.py -g Nmap_results.gnmap`
-
-3. A single target
-
-* `python AutoDirbuster.py -st example.com:80`
+* `python AutoDirbuster.py -u example.com:80 -w my_wordlist.txt`
 
 ### How does this script work?
 * A list of targets is provided
 * A TCP connect scan is done on the target port to test if it's open
-* If it's open, HTTP and HTTPS requests are sent to determine if the service is HTTP-based and whether it requires SSL
-* If the service is HTTP, a check is done to determine if a previous report file is in the same directory. Report files follow the format: `DirBuster-Report-IP-port.txt`
-* Dirbuster is run using Python's `subprocess.Popen()`. If a timeout is specified, then after the timeout period, a `SIGINT` signal is sent to Dirbuster so it can safely shutdown and write results to disk. A note is added to the report indicating that the scan timed out.
+* If the port open, HTTP and HTTPS requests are sent to determine if the service is HTTP-based and whether it requires TLS
+* If the service is HTTP, a check is done to determine if a previous report file is in the same directory
+  * Report files follow the format: `ffuf-report-{proto}_{target}_{port}'`
+* ffuf is run using Python's `subprocess.Popen()`
 * The next IP:port goes through the same process (TCP connect, HTTP service query, dirbust)
 
-### This script isn't working
-Ensure the following
-* Are all of the dependencies listed in `requirements.txt` installed?
-* Is there a directory called "DirBuster" inside the same directory as AutoDirbuster.py?
-* Does this "DirBuster" directory contain the Dirbuster JAR file named "DirBuster.jar"?
-* Is "DirBuster.jar" version 0.12?
-* Does this "DirBuster" directory contain a file called "directory-list-2.3-small.txt" (the default wordlist)?
-* Does this "DirBuster" directory contain a subdirectory called "lib" with the default 13 required Dirbuster JAR dependencies?
-* Is Java installed?
-* Is Java in your path?
-* Run AutoDirbuster with the `--debug` flag to view the subprocess command that AutoDirbuster is using to launch Dirbuster. Run this command from the terminal to view standard error as AutoDirbuster is configured to send subprocess standard error to /dev/null
+### This program isn't working
+Ensure the following:
+* Are all the dependencies listed in `requirements.txt` installed?
+* Is `ffuf` installed and in your system path?
+  * Try running `ffuf -V`
+  * Installation instructions can be found on the [ffuf GitHub repository page](https://github.com/ffuf/ffuf)
+* You may need to use Python 3.11+
+  * Version information can be obtained by running `python -V`
 
 ## Usage
 ```
-root@kali:~# python AutoDirbuster.py -h
+# python AutoDirbuster.py --help
+usage:
      ___         __        ____  _      __               __
     /   | __  __/ /_____  / __ \(_)____/ /_  __  _______/ /____  _____
    / /| |/ / / / __/ __ \/ / / / / ___/ __ \/ / / / ___/ __/ _ \/ ___/
@@ -72,45 +94,51 @@ root@kali:~# python AutoDirbuster.py -h
  /_/  |_\__,_/\__/\____/_____/_/_/  /_.___/\__,_/____/\__/\___/_/
 
 AutoDirbuster.py [options] {target file}
-    Automatically run and save Dirbuster scans for multiple IPs
 
-Positional arguments:
-    {target} Target file; list of IP:port, one per line
+Automatically run and save ffuf scans for multiple IPs
 
-Optional arguments:
-    Common Options:
-    -g        Gnmap mode; provide a Nmap .gnmap file instead of an IP:port file
-                  as a positional argument
-    -st       Single target mode, positional argument is target in IP:port format
-    -to       Set a timeout value in minutes for each host; default is None
-    -v        Verbose mode; print service query status updates
-    -f        Force mode; don't check if DirBuster report file exists, this will
-                  result in previous reports being overwritten
-    -k        Don't delete the text results file after converting it to a CSV
-                  result file
-    -h        Print this help message
-    --dns     Automatically resolve IP address to hostname to use during dirbust
+options:
+  -h, --help            show this help message and exit
 
-    Dirbuster Options:
-    -d        Full path of directory that contains DirBuster.jar; default is
-                  C:\Users\apoorman\Documents\PythonProjects\AutoDirbuster\git\AutoDirbuster\DirBuster\
-    -l        Wordlist to use for list based brute force; default is OWASP's
-                  directory-list-2.3-small.txt
-    -e        File Extension list (e.g.: "asp,aspx"); default is None
-    -t        Number of connection threads to use; default is 350
-    -r        Recursive mode; default is False
-    -s        Start point of the scan; default is "/"
+AutoDirbuster options:
+  target                Target file with IP:port, one per line
+  -u, --url             Single target mode, positional argument is target in IP:port
+                        format
+  -f, --force           Force mode; don't check if report file exists, this will result in
+                        previous reports being overwritten
+  --dns                 Automatically resolve IP address to hostname to use during dirbust
+  --debug               Show debugging information
+
+ffuf options:
+  -w WORDLIST, --wordlist WORDLIST
+                        Wordlist to use for list based brute force
+  -X METHOD, --method METHOD
+                        HTTP method to use; default=GET
+  -e EXTENSIONS, --extensions EXTENSIONS
+                        File extension list (e.g.: "asp,aspx"); default is None
+  -t THREADS, --threads THREADS
+                        Override the default number of ffuf threads
+  --rate RATE           Rate of requests per second
+  -to TIMEOUT, --timeout TIMEOUT
+                        Set a timeout value for each host in minutes; default is None
+  -fr, --follow-redirects
+                        Follow redirects; default is False
+  -r, --recursive       Recursive mode; default is False
+  -s STARTPOINT, --startpoint STARTPOINT
+                        Start point of the scan; default=/
+  -of OUTPUT_FORMAT, --output-format OUTPUT_FORMAT
+                        Output format to write results to; default=csv
+  -mc MATCH_CODES, --match-codes MATCH_CODES
+                        Match HTTP status codes;
+                        default=200,204,301,302,307,401,403,405,500
+  --custom-option CUSTOM_OPTION [CUSTOM_OPTION ...]
+                        Specify ffuf option that AutoDirbuster doesn't support by default.
+                        Argument should be a key/value pair separated by a comma with no
+                        leading '-', example: --custom-option=ml,1. If the provided
+                        argument is a boolean, provide an empty value: --custom-option=sa,
 
 Examples:
-    python AutoDirbuster.py ip_port_list.txt
-    python AutoDirbuster.py -g Nmap_results.gnmap -to 15
-    python AutoDirbuster.py -g Nmap_results.gnmap -r -e "php,html" --dns
-
+    python AutoDirbuster.py ip_port_list.txt -w my_wordlist.txt
+    python AutoDirbuster.py -st example.com:80 -w my_wordlist.txt -mc 200,500
+    python AutoDirbuster.py ip_port_list.txt -w my_wordlist.txt -r -e "php,html" --dns
 ```
-
-## Dependencies
-Run `pip3 install <module name>` on the following modules:
-* dnspython
-* requests
-
-Alternatively, you can run `pip3 install -r requirements.txt`

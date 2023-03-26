@@ -2,4 +2,5 @@
 .idea/
 *dev/
 *.csv
-timedout_targets.txt
+*.json
+ffuf-report-*
