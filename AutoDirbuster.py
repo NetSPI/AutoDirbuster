@@ -25,7 +25,7 @@ class AutoDirbuster:
 
     def __init__(self, args: dict):
         """Initialize attributes for AutoDirbuster instance"""
-        self.__version__ = '2.0.0'
+        self.__version__ = '2.0.1'
         self.args = args
         self.targets = []
 
@@ -169,6 +169,8 @@ class AutoDirbuster:
                         except Exception:
                             print('[ERROR] Uncaught exception:')
                             print(traceback.format_exc())
+                        if self.args['debug']:
+                            print(f'[DEBUG] Report written to {output_name}')
                         print()
 
                     # Report file already exists
@@ -316,7 +318,8 @@ ffuf options:
   -X METHOD, --method METHOD
                         HTTP method to use; default=GET
   -e EXTENSIONS, --extensions EXTENSIONS
-                        File extension list (e.g.: "asp,aspx"); default is None
+                        File extension list (e.g.: ".asp,.aspx"), ensure that a period is
+                        before the provided extension; default is None
   -t THREADS, --threads THREADS
                         Override the default number of ffuf threads
   --rate RATE           Rate of requests per second
@@ -341,7 +344,7 @@ ffuf options:
 Examples:
     python AutoDirbuster.py ip_port_list.txt -w my_wordlist.txt
     python AutoDirbuster.py -st example.com:80 -w my_wordlist.txt -mc 200,500
-    python AutoDirbuster.py ip_port_list.txt -w my_wordlist.txt -r -e "php,html" --dns
+    python AutoDirbuster.py ip_port_list.txt -w my_wordlist.txt -r -e ".php,.html" --dns
     
 ''' % sys.argv[0]
 
@@ -392,7 +395,8 @@ if __name__ == '__main__':
                               type=str,
                               default=default_method)
     ffuf_options.add_argument('-e', '--extensions',
-                              help='File extension list (e.g.: "asp,aspx"); default is None',
+                              help='File extension list (e.g.: ".asp,.aspx"), ensure that a period is before the '
+                                   'provided extension; default is None',
                               type=str)
     ffuf_options.add_argument('-t', '--threads',
                               help='Override the default number of ffuf threads',
