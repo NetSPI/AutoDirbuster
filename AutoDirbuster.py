@@ -14,10 +14,10 @@ import traceback
 import requests
 import dns.resolver
 import dns.reversename
-from requests.packages.urllib3.exceptions import InsecureRequestWarning
+from urllib3 import disable_warnings, exceptions
 
 # Configure requests to suppress SSL validation warning
-requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+disable_warnings(exceptions.InsecureRequestWarning)
 
 
 class AutoDirbuster:
@@ -25,7 +25,7 @@ class AutoDirbuster:
 
     def __init__(self, args: dict):
         """Initialize attributes for AutoDirbuster instance"""
-        self.__version__ = '2.0.1'
+        self.__version__ = '2.1.0'
         self.args = args
         self.targets = []
 
@@ -125,6 +125,11 @@ class AutoDirbuster:
                     if self.args['timeout']:
                         ffuf_command.append('-maxtime')
                         ffuf_command.append(str(self.args['timeout']))
+                    if self.args['header']:
+                        ffuf_command.append('-H')
+                        ffuf_command.append(str(self.args['header']))
+                    if not self.args['no_auto_calibrate']:
+                        ffuf_command.append('-ac')
                     # Custom args
                     if self.args['custom_option']:
                         for custom_option in self.args['custom_option']:
@@ -335,6 +340,10 @@ ffuf options:
   -mc MATCH_CODES, --match-codes MATCH_CODES
                         Match HTTP status codes;
                         default=200,204,301,302,307,401,403,405,500
+  -nac, --no-auto-calibrate
+                        Do not automatically calibrate filtering options
+  -H HEADER, --header HEADER
+                        HTTP header "Name: Value", separated by colon
   --custom-option CUSTOM_OPTION [CUSTOM_OPTION ...]
                         Specify ffuf option that AutoDirbuster doesn't support by default.
                         Argument should be a key/value pair separated by a comma with no
@@ -425,6 +434,12 @@ if __name__ == '__main__':
                               help=f'Match HTTP status codes; default={default_status_codes}',
                               type=str,
                               default=default_status_codes)
+    ffuf_options.add_argument('-nac', '--no-auto-calibrate',
+                              help='Do not automatically calibrate filtering options',
+                              action='store_true')
+    ffuf_options.add_argument('-H', '--header',
+                              help='HTTP header "Name: Value", separated by colon',
+                              type=str)
     # Security note: this argument will pass dangerous user input into the terminal via subprocess.Popen(). Please be
     #                sure not to provide AutoDirbuster with excessive permissions or host this program externally
     #                without disabling this argument. If you wish to disable this functionality, please modify the

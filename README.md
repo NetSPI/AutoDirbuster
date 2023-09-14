@@ -131,6 +131,10 @@ ffuf options:
   -mc MATCH_CODES, --match-codes MATCH_CODES
                         Match HTTP status codes;
                         default=200,204,301,302,307,401,403,405,500
+  -nac, --no-auto-calibrate
+                        Do not automatically calibrate filtering options
+  -H HEADER, --header HEADER
+                        HTTP header "Name: Value", separated by colon
   --custom-option CUSTOM_OPTION [CUSTOM_OPTION ...]
                         Specify ffuf option that AutoDirbuster doesn't support by default.
                         Argument should be a key/value pair separated by a comma with no
