@@ -25,7 +25,7 @@ class AutoDirbuster:
 
     def __init__(self, args: dict):
         """Initialize attributes for AutoDirbuster instance"""
-        self.__version__ = '2.1.0'
+        self.__version__ = '2.1.1'
         self.args = args
         self.targets = []
 
@@ -529,6 +529,9 @@ if __name__ == '__main__':
             arguments['custom_option'] = custom_options_args
     else:
         arguments['custom_option'] = None
+    # Wordlist
+    if not os.path.isfile(arguments['wordlist']):
+        parser.error(f'Wordlist file "{arguments["wordlist"]}" does not exist')
 
     # Debug
     if arguments['debug']:
