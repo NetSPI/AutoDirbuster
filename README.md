@@ -34,9 +34,9 @@ Ffuf is a great directory buster but running it against multiple IPs and ports i
 * Run Nmap and find open ports
 * Review the Nmap results and create an IP:port list, one per line
 * Run AutoDirbuster against the open ports
-* AutoDirbuster will determine if the provided port is open and if the service is HTTP based
+* AutoDirbuster will determine if the service is HTTP based
 
-  * `python AutoDirbuster.py ip_port_list.txt -w my_wordlist.txt`
+  * `python AutoDirbuster.py ip_port_list.txt -w my_wordlist.txt --combine`
 
 **If attacking a single target:**
 
@@ -51,6 +51,7 @@ Ffuf is a great directory buster but running it against multiple IPs and ports i
 | --rate          | Rate of requests per second                                       |
 | --timeout       | Set a timeout value for each host in minutes                      |
 | --match-codes   | Match provided HTTP status codes                                  |
+| --combine       | Combine all CSV results into a single file after scanning         |
 | --custom-option | Specify ffuf option that AutoDirbuster doesn't support by default |
 
 Specify the `--help` flag for a full list of options.
@@ -67,12 +68,12 @@ The program can take two data sources:
 
 ### How does this script work?
 * A list of targets is provided
-* A TCP connect scan is done on the target port to test if it's open
-* If the port open, HTTP and HTTPS requests are sent to determine if the service is HTTP-based and whether it requires TLS
+* HTTPS and HTTP requests are sent to determine if the service is HTTP-based and whether it requires TLS (the HTTP request itself serves as the connectivity check — no separate TCP port scan is needed)
+* If HTTPS fails with a TLS negotiation error, a lenient TLS context is tried before falling back to plain HTTP
 * If the service is HTTP, a check is done to determine if a previous report file is in the same directory
-  * Report files follow the format: `ffuf-report-{proto}_{target}_{port}'`
+  * Report files follow the format: `ffuf-report-{proto}_{target}_{port}`
 * ffuf is run using Python's `subprocess.Popen()`
-* The next IP:port goes through the same process (TCP connect, HTTP service query, dirbust)
+* The next IP:port goes through the same process (HTTP service query, dirbust)
 
 ### This program isn't working
 Ensure the following:
@@ -108,6 +109,7 @@ AutoDirbuster options:
                         previous reports being overwritten
   --dns                 Automatically resolve IP address to hostname to use during dirbust
   --debug               Show debugging information
+  --combine             Combine all CSV results into a single file after scanning
 
 ffuf options:
   -w WORDLIST, --wordlist WORDLIST
