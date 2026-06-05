@@ -108,7 +108,7 @@ class AutoDirbuster:
 
     def __init__(self, args: dict):
         """Initialize attributes for AutoDirbuster instance"""
-        self.__version__ = '2.2.0'
+        self.__version__ = '2.3.0'
         self.args = args
         self.targets = []
         self.report_files = []
@@ -281,8 +281,9 @@ class AutoDirbuster:
                 if self.args['debug']:
                     print('[DEBUG] Subprocess command:', ' '.join(ffuf_command), '\n')
                 if not file_exists:
-                    # Start process
-                    proc = subprocess.Popen(ffuf_command)
+                    # Start process; suppress ffuf stderr when --quiet (2>/dev/null)
+                    stderr_target = subprocess.DEVNULL if self.args['quiet'] else None
+                    proc = subprocess.Popen(ffuf_command, stderr=stderr_target)
                     try:
                         proc.wait()
                     except KeyboardInterrupt:
@@ -496,6 +497,8 @@ AutoDirbuster options:
   --dns                 Automatically resolve IP address to hostname to use during dirbust
   --debug               Show debugging information
   --combine             Combine all CSV results into a single file after scanning
+  --quiet               Suppress ffuf's stderr output (equivalent of 2>/dev/null);
+                        AutoDirbuster's own output and ffuf stdout are unaffected
 
 ffuf options:
   -w WORDLIST, --wordlist WORDLIST
@@ -573,6 +576,10 @@ if __name__ == '__main__':
                                       action='store_true')
     autodirbuster_option.add_argument('--combine',
                                       help='Combine all CSV results into a single file after scanning',
+                                      action='store_true')
+    autodirbuster_option.add_argument('--quiet',
+                                      help="Suppress ffuf's stderr output (equivalent of 2>/dev/null); "
+                                           "AutoDirbuster's own output and ffuf stdout are unaffected",
                                       action='store_true')
     autodirbuster_option.add_argument('-h', '--help',
                                       help='Show this help message and exit',
@@ -735,4 +742,3 @@ if __name__ == '__main__':
     # Launch AutoDirbuster
     adb = AutoDirbuster(arguments)
     adb.main()
- 

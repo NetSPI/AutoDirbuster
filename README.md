@@ -52,6 +52,7 @@ Ffuf is a great directory buster but running it against multiple IPs and ports i
 | --timeout       | Set a timeout value for each host in minutes                      |
 | --match-codes   | Match provided HTTP status codes                                  |
 | --combine       | Combine all CSV results into a single file after scanning         |
+| --quiet         | Suppress ffuf's stderr output (equivalent of 2>/dev/null)         |
 | --custom-option | Specify ffuf option that AutoDirbuster doesn't support by default |
 
 Specify the `--help` flag for a full list of options.
@@ -110,6 +111,8 @@ AutoDirbuster options:
   --dns                 Automatically resolve IP address to hostname to use during dirbust
   --debug               Show debugging information
   --combine             Combine all CSV results into a single file after scanning
+  --quiet               Suppress ffuf's stderr output (equivalent of 2>/dev/null);
+                        AutoDirbuster's own output and ffuf stdout are unaffected
 
 ffuf options:
   -w WORDLIST, --wordlist WORDLIST
